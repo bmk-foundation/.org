@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>নোটিফিকেশন টেস্ট পেজ</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-messaging.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; padding: 50px; background: #f4f7f6; }
+        .card { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display: inline-block; max-width: 400px; }
+        h2 { color: #27ae60; }
+        button { background: #27ae60; color: white; border: none; padding: 12px 25px; border-radius: 25px; font-size: 16px; cursor: pointer; margin-top: 20px; transition: 0.3s; }
+        button:disabled { background: #ccc; }
+        #status { margin-top: 20px; font-weight: bold; color: #555; }
+        #token-area { margin-top: 20px; font-size: 10px; word-break: break-all; color: #888; background: #eee; padding: 10px; border-radius: 5px; display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <img src="logo.png" alt="Logo" style="width: 80px; margin-bottom: 10px;">
+        <h2>নোটিফিকেশন টেস্ট</h2>
+        <p>নিচের বাটনে ক্লিক করে চেক করুন আপনার ব্রাউজারে নোটিফিকেশন কাজ করছে কি না।</p>
+        
+        <button id="notifBtn" onclick="askPermission()">নোটিফিকেশন চালু করুন</button>
+        
+        <div id="status">অবস্থা: চেক করা হচ্ছে...</div>
+        <div id="token-area"></div>
+    </div>
+
+    <script>
+        // ২. ফায়ারবেস কনফিগারেশন
+        const firebaseConfig = {
+            apiKey: "AIzaSyAzGK_y9kx5oVFL1-rGTnSDxDvdYoVIqOg",
+            authDomain: "bmkf-donation-system.firebaseapp.com",
+            databaseURL: "https://bmkf-donation-system-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "bmkf-donation-system",
+            storageBucket: "bmkf-donation-system.firebasestorage.app",
+            messagingSenderId: "718912081844",
+            appId: "1:718912081844:web:98d102b1a6dc07464cace1"
+        };
+
+        // ৩. ইনিশিয়ালাইজ
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const messaging = firebase.messaging();
+
+        const statusDiv = document.getElementById('status');
+        const tokenArea = document.getElementById('token-area');
+        const notifBtn = document.getElementById('notifBtn');
+
+        // ৪. সার্ভিস ওয়ার্কার রেজিস্টার করা (এটি ছাড়া পুশ আসবে না)
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('firebase-messaging-sw.js')
+            .then(function(registration) {
+                console.log('Registration successful, scope is:', registration.scope);
+                messaging.useServiceWorker(registration);
+            }).catch(function(err) {
+                console.log('Service worker registration failed, error:', err);
+            });
+        }
+
+        // ৫. পারমিশন চাওয়ার ফাংশন
+        function askPermission() {
+            statusDiv.innerText = "অবস্থা: পারমিশন চাওয়া হচ্ছে...";
+            
+            Notification.requestPermission().then((permission) => {
+                if (permission === 'granted') {
+                    statusDiv.style.color = "green";
+                    statusDiv.innerText = "অবস্থা: পারমিশন পাওয়া গেছে!";
+                    getFCMToken();
+                } else {
+                    statusDiv.style.color = "red";
+                    statusDiv.innerText = "অবস্থা: পারমিশন দেওয়া হয়নি (Blocked)";
+                    alert("দয়া করে ব্রাউজার সেটিংস থেকে নোটিফিকেশন এলাউ করুন।");
+                }
+            });
+        }
+
+        // ৬. টোকেন জেনারেট এবং ডাটাবেসে সেভ
+        function getFCMToken() {
+            messaging.getToken({ 
+                vapidKey: "BLV9pOSAlvgebfQJB1SMtN_Hj2DqB2MBn0rtqxhOaH7dMwyZXuPYNNDzC4z_KvAxmr1JsLSMjQyRVBLQf-HROvo" 
+            })
+            .then((currentToken) => {
+                if (currentToken) {
+                    console.log("Token:", currentToken);
+                    tokenArea.innerText = "আপনার টোকেন: " + currentToken;
+                    tokenArea.style.display = "block";
+                    
+                    // ফায়ারবেস ডাটাবেসে সেভ
+                    db.ref('notification_tokens').child(currentToken.substring(0, 20)).set({
+                        token: currentToken,
+                        lastUpdated: Date.now(),
+                        device: navigator.userAgent
+                    }).then(() => {
+                        statusDiv.innerText = "অবস্থা: টোকেন ডাটাবেসে সেভ হয়েছে!";
+                        notifBtn.innerText = "সফলভাবে চালু হয়েছে";
+                        notifBtn.disabled = true;
+                    });
+                } else {
+                    statusDiv.innerText = "অবস্থা: টোকেন পাওয়া যায়নি।";
+                }
+            }).catch((err) => {
+                console.log('An error occurred while retrieving token. ', err);
+                statusDiv.innerText = "এরর: " + err.message;
+            });
+        }
+
+        // চেক করা আগে থেকেই পারমিশন দেওয়া আছে কি না
+        if (Notification.permission === 'granted') {
+            statusDiv.innerText = "অবস্থা: আগে থেকেই চালু আছে।";
+            getFCMToken();
+        }
+        window.addEventListener('load', () => {
+    // পেজ লোড হওয়ার ২ সেকেন্ড পর পারমিশন চাইবে
+    setTimeout(() => {
+        if (Notification.permission === 'default') {
+            askPermission(); 
+        }
+    }, 2000);
+});
+
+    </script>
+</body>
+</html>
